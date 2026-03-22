@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
+<title>ADS-C2 | Air Defense Command & Control</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep:    #050c14;
+  --bg-panel:   #08111e;
+  --bg-card:    #0d1a2a;
+  --bg-hover:   #122033;
+  --border:     #1a3050;
+  --accent:     #00d4ff;
+  --accent2:    #00ff9d;
+  --warn:       #ffb300;
+  --danger:     #ff3860;
+  --ok:         #23d160;
+  --text:       #cde0f5;
+  --text-dim:   #567896;
+  --text-bright:#e8f4ff;
+  --font-mono:  'Courier New', monospace;
+  --font-ui:    'Segoe UI', system-ui, sans-serif;
+  --scan-color: rgba(0,212,255,0.08);
+}
+
+html, body { height: 100%; overflow: hidden; background: var(--bg-deep); color: var(--text); font-family: var(--font-ui); }
+
+/* ── Layout ───────────────────────────────────────────────────────── */
+#app { display: grid; grid-template-columns: 300px 1fr 300px; grid-template-rows: 56px 1fr 200px; height: 100vh; gap: 0; }
+
+/* Header */
+#header {
+  grid-column: 1/-1; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 20px;
+  position: relative;
+}
+#header h1 { font-size: 1.1rem; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; font-weight: 700; }
+#header h1 span { color: var(--text-dim); font-weight: 300; }
+.status-bar { display: flex; gap: 16px; margin-left: auto; align-items: center; }
+.status-pill { display: flex; gap: 6px; align-items: center; font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+.dot.warn { background: var(--warn); }
+.dot.danger { background: var(--danger); animation: fastpulse 0.6s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+@keyframes fastpulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+.ctrl-btn {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text); padding: 5px 14px; border-radius: 3px;
+  cursor: pointer; font-size: 0.75rem; letter-spacing: 1px;
+  text-transform: uppercase; transition: all 0.15s;
+}
+.ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ctrl-btn.primary { border-color: var(--accent2); color: var(--accent2); }
+.ctrl-btn.danger-btn { border-color: var(--danger); color: var(--danger); }
+
+/* Left panel */
+#panel-left {
+  background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* Map */
+#map-container { position: relative; overflow: hidden; background: #000; }
+#map { width: 100%; height: 100%; }
+
+/* Scan line overlay */
+#map-container::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scan-color) 2px, var(--scan-color) 4px);
+  z-index: 1000;
+}
+
+/* Right panel */
+#panel-right {
+  background: var(--bg-panel); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* Bottom strip */
+#bottom-strip {
+  grid-column: 1/-1; background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  display: flex; overflow: hidden;
+}
+
+/* ── Panel Sections ──────────────────────────────────────────────── */
+.panel-section { display: flex; flex-direction: column; overflow: hidden; }
+.panel-section + .panel-section { border-top: 1px solid var(--border); }
+.section-header {
+  padding: 8px 14px; font-size: 0.68rem; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--accent); background: rgba(0,212,255,0.05);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.section-header .badge {
+  background: var(--accent); color: var(--bg-deep); font-size: 0.65rem;
+  padding: 1px 6px; border-radius: 10px; font-weight: 700;
+}
+.section-header .badge.danger { background: var(--danger); }
+.section-body { overflow-y: auto; flex: 1; padding: 6px; }
+
+/* ── Threat Cards ────────────────────────────────────────────────── */
+.threat-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;
+  cursor: pointer; transition: all 0.15s; position: relative;
+  overflow: hidden;
+}
+.threat-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.threat-card.drone::before    { background: var(--accent2); }
+.threat-card.cruise::before   { background: var(--warn); }
+.threat-card.fighter::before  { background: var(--danger); }
+.threat-card.ballistic::before{ background: #ff00ff; }
+.threat-card.loitering_munition::before { background: #ff6600; }
+.threat-card:hover { border-color: var(--accent); background: var(--bg-hover); }
+.threat-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(0,212,255,0.3); }
+
+.threat-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.threat-label { font-size: 0.85rem; font-weight: 700; color: var(--text-bright); font-family: var(--font-mono); }
+.threat-class { font-size: 0.65rem; letter-spacing: 1px; text-transform: uppercase; }
+.threat-class.drone    { color: var(--accent2); }
+.threat-class.cruise   { color: var(--warn); }
+.threat-class.fighter  { color: var(--danger); }
+.threat-class.ballistic{ color: #ff00ff; }
+.threat-class.loitering_munition { color: #ff6600; }
+.priority-badge {
+  font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+  background: var(--bg-deep); color: var(--text-dim);
+}
+.priority-badge.high { color: var(--danger); border: 1px solid var(--danger); }
+.priority-badge.med  { color: var(--warn);   border: 1px solid var(--warn); }
+.priority-badge.low  { color: var(--accent2);border: 1px solid var(--accent2); }
+
+.threat-meta { margin-top: 5px; font-size: 0.72rem; color: var(--text-dim); line-height: 1.6; font-family: var(--font-mono); }
+.threat-ttt { color: var(--danger); font-weight: 700; }
+.threat-status { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+.threat-status.engaged    { color: var(--warn); }
+.threat-status.active     { color: var(--ok); }
+.threat-status.neutralized{ color: var(--text-dim); }
+
+/* ── Kalman Filter track quality bar ────────────────────────────── */
+.kf-bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 5px; }
+.kf-fill { height: 100%; border-radius: 2px; transition: width 0.5s, background 0.5s; }
+.kf-badge {
+  font-size: 0.58rem; letter-spacing: 1px; padding: 1px 5px; border-radius: 2px;
+  border: 1px solid; margin-left: 5px; vertical-align: middle;
+}
+.kf-badge.good   { color: var(--accent2); border-color: var(--accent2); }
+.kf-badge.medium { color: var(--warn);    border-color: var(--warn); }
+.kf-badge.poor   { color: var(--danger);  border-color: var(--danger); }
+
+/* ── Effector Cards ──────────────────────────────────────────────── */
+.effector-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 4px; padding: 7px 10px; margin-bottom: 4px;
+  cursor: pointer; display: flex; align-items: center; gap: 10px;
+  transition: all 0.15s;
+}
+.effector-card:hover { border-color: var(--accent2); }
+.effector-icon { font-size: 1.2rem; flex-shrink: 0; }
+.effector-info { flex: 1; min-width: 0; }
+.effector-label { font-size: 0.78rem; font-weight: 600; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.effector-meta  { font-size: 0.68rem; color: var(--text-dim); font-family: var(--font-mono); }
+.ammo-bar { height: 4px; border-radius: 2px; background: var(--border); margin-top: 4px; }
+.ammo-fill { height: 100%; border-radius: 2px; background: var(--accent2); transition: width 0.3s; }
+.ammo-fill.low { background: var(--warn); }
+.ammo-fill.critical { background: var(--danger); }
+.effector-status-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--ok);
+}
+.effector-status-dot.reloading { background: var(--warn); animation: pulse 1s infinite; }
+.effector-status-dot.engaged   { background: var(--accent); animation: pulse 0.5s infinite; }
+.effector-status-dot.destroyed { background: var(--danger); animation: none; opacity: 0.4; }
+
+/* ── Base Groups ─────────────────────────────────────────────────── */
+.base-group { margin-bottom: 10px; }
+.base-header {
+  font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--accent); padding: 4px 6px; display: flex; justify-content: space-between;
+  border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+
+/* ── Orders Panel ────────────────────────────────────────────────── */
+#orders-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); }
+.order-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border-bottom: 1px solid rgba(26,48,80,0.4);
+  font-size: 0.72rem; font-family: var(--font-mono); transition: background 0.1s;
+}
+.order-row:hover { background: var(--bg-hover); }
+.order-outcome { width: 28px; text-align: center; font-size: 1rem; }
+.order-bodies  { flex: 1; overflow: hidden; }
+.order-main    { color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.order-sub     { color: var(--text-dim); font-size: 0.66rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.order-pk      { color: var(--accent2); width: 40px; text-align: right; flex-shrink: 0; }
+
+/* ── Event Log ───────────────────────────────────────────────────── */
+#log-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.log-entry { padding: 4px 10px; font-size: 0.68rem; font-family: var(--font-mono); border-bottom: 1px solid rgba(26,48,80,0.3); }
+.log-entry .log-time { color: var(--text-dim); margin-right: 8px; }
+.log-entry.BREACH  { background: rgba(255,56,96,0.12); color: var(--danger); }
+.log-entry.CRITICAL{ background: rgba(255,56,96,0.08); color: var(--danger); }
+.log-entry.WARNING { background: rgba(255,179,0,0.08);  color: var(--warn); }
+.log-entry.HIT     { color: var(--ok); }
+.log-entry.MISS    { color: var(--warn); }
+.log-entry.ORDER   { color: var(--accent); }
+.log-entry.THREAT  { color: #cc88ff; }
+
+/* ── AI Recommendations ──────────────────────────────────────────── */
+.recommendation-card {
+  background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.25);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 0.73rem;
+}
+.rec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.rec-title  { color: var(--accent); font-weight: 700; font-family: var(--font-mono); }
+.rec-pk     { color: var(--accent2); font-weight: 700; }
+.rec-body   { color: var(--text-dim); line-height: 1.5; }
+.rec-actions{ margin-top: 6px; display: flex; gap: 6px; }
+.rec-btn    { font-size: 0.68rem; padding: 3px 10px; border-radius: 3px; cursor: pointer; border: none; font-family: var(--font-mono); }
+.rec-btn.approve  { background: var(--accent2); color: var(--bg-deep); }
+.rec-btn.reject   { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+
+.warn-card {
+  background: rgba(255,56,96,0.08); border: 1px solid rgba(255,56,96,0.3);
+  border-radius: 4px; padding: 7px 10px; margin-bottom: 6px;
+  font-size: 0.72rem; color: var(--danger);
+}
+.warn-card.WARNING { border-color: rgba(255,179,0,0.4); color: var(--warn); background: rgba(255,179,0,0.06); }
+.warn-card.ADVISORY{ border-color: var(--border); color: var(--text-dim); background: transparent; }
+
+/* ── Spawn controls ──────────────────────────────────────────────── */
+#spawn-controls { padding: 8px; display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.spawn-btn {
+  flex: 1; min-width: 60px; padding: 5px; font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 1px; border-radius: 3px; cursor: pointer; border: none; font-weight: 700;
+}
+.spawn-btn.drone    { background: rgba(0,255,157,0.15); color: var(--accent2); border: 1px solid var(--accent2); }
+.spawn-btn.cruise   { background: rgba(255,179,0,0.15);  color: var(--warn);   border: 1px solid var(--warn); }
+.spawn-btn.fighter  { background: rgba(255,56,96,0.15);  color: var(--danger); border: 1px solid var(--danger); }
+.spawn-btn.ballistic{ background: rgba(255,0,255,0.15);  color: #ff00ff;       border: 1px solid #ff00ff; }
+
+/* ── Modals / overlays ───────────────────────────────────────────── */
+#ai-overlay {
+  position: fixed; right: 0; top: 56px; bottom: 200px;
+  width: 320px; background: var(--bg-deep); border-left: 1px solid var(--border);
+  z-index: 2000; display: flex; flex-direction: column; transform: translateX(100%);
+  transition: transform 0.25s ease;
+}
+#ai-overlay.open { transform: translateX(0); }
+#ai-overlay-header {
+  padding: 10px 14px; background: rgba(0,212,255,0.08);
+  border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.72rem; letter-spacing: 2px; text-transform: uppercase; color: var(--accent);
+}
+#ai-overlay-body { flex: 1; overflow-y: auto; padding: 10px; }
+
+/* ── Cost Breakdown Modal ─────────────────────────────────────────── */
+#cost-modal-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  z-index: 3000; align-items: center; justify-content: center;
+}
+#cost-modal-backdrop.open { display: flex; }
+#cost-modal {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 6px; width: 680px; max-width: 95vw; max-height: 80vh;
+  display: flex; flex-direction: column; box-shadow: 0 8px 40px rgba(0,0,0,0.8);
+}
+#cost-modal-header {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+#cost-modal-header h2 { font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; color: var(--warn); }
+#cost-modal-body { overflow-y: auto; padding: 0; }
+.cost-summary-bar {
+  display: flex; gap: 16px; padding: 12px 18px; background: rgba(255,179,0,0.06);
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.cost-summary-item { display: flex; flex-direction: column; gap: 2px; }
+.cost-summary-item .val { font-size: 1.1rem; font-weight: 700; font-family: var(--font-mono); color: var(--warn); }
+.cost-summary-item .lbl { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); }
+.cost-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.cost-table th {
+  padding: 8px 12px; text-align: left; font-size: 0.63rem; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border);
+  background: var(--bg-card); position: sticky; top: 0;
+}
+.cost-table td { padding: 7px 12px; border-bottom: 1px solid rgba(26,48,80,0.5); vertical-align: middle; }
+.cost-table tr:hover td { background: var(--bg-hover); }
+.cost-table tr.hit td { border-left: 2px solid var(--ok); }
+.cost-table tr.miss td { border-left: 2px solid var(--danger); }
+.cost-table tr.pending td { border-left: 2px solid var(--text-dim); }
+.outcome-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: 700; }
+.outcome-badge.hit { background: rgba(35,209,96,0.2); color: var(--ok); }
+.outcome-badge.miss { background: rgba(255,56,96,0.2); color: var(--danger); }
+.outcome-badge.pending { background: rgba(86,120,150,0.2); color: var(--text-dim); }
+
+/* ── Scrollbars ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Stats row ───────────────────────────────────────────────────── */
+#stats-row {
+  grid-column: 1/-1;
+  display: none; /* built into header */
+}
+
+.stat-box {
+  display: flex; flex-direction: column; align-items: center; padding: 0 18px;
+  border-right: 1px solid var(--border);
+}
+.stat-val { font-size: 1.3rem; font-weight: 700; color: var(--accent); font-family: var(--font-mono); }
+.stat-lbl { font-size: 0.6rem; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+
+/* Leaflet dark theme overrides */
+.leaflet-container { background: #05111f !important; }
+.leaflet-control-zoom a { background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; }
+.leaflet-control-attribution { background: rgba(5,12,20,0.7) !important; color: var(--text-dim) !important; font-size: 9px !important; }
+
+/* Threat icon animations */
+@keyframes threat-blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.threat-icon-active   { animation: threat-blink 1.5s infinite; }
+.threat-icon-engaged  { animation: threat-blink 0.6s infinite; }
+
+/* Map popup style */
+.leaflet-popup-content-wrapper { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
+.leaflet-popup-tip { background: var(--bg-card); }
+.leaflet-popup-content { font-family: var(--font-mono); font-size: 12px; line-height: 1.7; }
+
+/* Engagement line animation */
+@keyframes dash-anim { to { stroke-dashoffset: -20; } }
+
+/* Range ring toggle */
+.range-circle { stroke: rgba(0,212,255,0.15); stroke-width: 1; fill: rgba(0,212,255,0.03); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ───────────────────────────────────────────────────── -->
+  <header id="header">
+    <div style="display:flex;flex-direction:column;line-height:1.2">
+      <h1>ADS<span>-</span>C2</h1>
+      <span style="font-size:0.6rem;color:var(--text-dim);letter-spacing:1px">AIR DEFENSE COMMAND &amp; CONTROL</span>
+    </div>
+    <!-- Stats -->
+    <div class="stat-box"><span class="stat-val" id="stat-threats">0</span><span class="stat-lbl">Threats</span></div>
+    <div class="stat-box"><span class="stat-val" id="stat-engaged">0</span><span class="stat-lbl">Engaged</span></div>
+    <div class="stat-box"><span class="stat-val" id="stat-effectors">0</span><span class="stat-lbl">Ready</span></div>
+    <div class="stat-box"><span class="stat-val" id="stat-neutralized">0</span><span class="stat-lbl">Neutralized</span></div>
+    <div class="stat-box"><span class="stat-val" id="stat-reserve" style="color:var(--ok)">—</span><span class="stat-lbl">Reserve</span></div>
+    <div class="stat-box" style="cursor:pointer" onclick="showCostModal()"><span class="stat-val" id="stat-cost" style="color:var(--warn)">$0</span><span class="stat-lbl">Mission Cost ↗</span></div>
+    <div class="stat-box"><span class="stat-val" id="stat-tick">0</span><span class="stat-lbl">Tick</span></div>
+
+    <div class="status-bar">
+      <div class="status-pill"><div class="dot" id="sim-dot"></div><span id="sim-status-lbl">LIVE</span></div>
+      <button class="ctrl-btn primary" onclick="runAI()">⚡ AI OPTIMISE</button>
+      <button class="ctrl-btn" onclick="toggleAI()">ORDERS</button>
+      <button class="ctrl-btn" onclick="toggleRanges()">RANGES</button>
+      <button class="ctrl-btn danger-btn" onclick="resetSim()">RESET</button>
+    </div>
+  </header>
+
+  <!-- ── Left Panel: Threat Track ─────────────────────────────────── -->
+  <aside id="panel-left">
+    <div class="panel-section" style="flex:1;overflow:hidden">
+      <div class="section-header">
+        Threat Track
+        <span class="badge danger" id="threat-badge">0</span>
+      </div>
+      <div class="section-body" id="threat-list"></div>
+    </div>
+    <div id="spawn-controls">
+      <button class="spawn-btn drone"     onclick="spawnThreat('drone')">+ Drone</button>
+      <button class="spawn-btn cruise"    onclick="spawnThreat('cruise')">+ Cruise</button>
+      <button class="spawn-btn fighter"   onclick="spawnThreat('fighter')">+ Fighter</button>
+      <button class="spawn-btn ballistic" onclick="spawnThreat('ballistic')">+ ICBM</button>
+      <button class="spawn-btn" style="background:rgba(255,102,0,0.15);color:#ff6600;border:1px solid #ff6600;flex:1;min-width:60px;padding:5px;font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;border-radius:3px;cursor:pointer;font-weight:700" onclick="spawnThreat('loitering_munition')">+ Loitering</button>
+    </div>
+  </aside>
+
+  <!-- ── Map ──────────────────────────────────────────────────────── -->
+  <div id="map-container"><div id="map"></div></div>
+
+  <!-- ── Right Panel: Assets ──────────────────────────────────────── -->
+  <aside id="panel-right">
+    <div class="panel-section" style="flex:1;overflow:hidden">
+      <div class="section-header">
+        Asset Management
+        <span class="badge" id="effector-badge">0</span>
+      </div>
+      <div class="section-body" id="effector-list"></div>
+    </div>
+  </aside>
+
+  <!-- ── Bottom: Orders + Log ─────────────────────────────────────── -->
+  <div id="bottom-strip">
+    <div id="orders-panel">
+      <div class="section-header" style="flex-shrink:0">
+        Engagement Orders
+        <span class="badge" id="orders-badge">0</span>
+      </div>
+      <div class="section-body" id="orders-list"></div>
+    </div>
+    <div id="log-panel" style="flex:1;border-left:1px solid var(--border)">
+      <div class="section-header" style="flex-shrink:0">
+        Event Log
+      </div>
+      <div class="section-body" id="event-log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI Overlay ─────────────────────────────────────────────────── -->
+<div id="ai-overlay">
+  <div id="ai-overlay-header">
+    <span>⚡ AI Recommendations</span>
+    <button style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:1rem" onclick="toggleAI()">✕</button>
+  </div>
+  <div id="ai-overlay-body"></div>
+</div>
+
+<!-- ── Cost Breakdown Modal ──────────────────────────────────────── -->
+<div id="cost-modal-backdrop" onclick="if(event.target===this)closeCostModal()">
+  <div id="cost-modal">
+    <div id="cost-modal-header">
+      <h2>💰 Mission Cost Breakdown</h2>
+      <button style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:1.1rem" onclick="closeCostModal()">✕</button>
+    </div>
+    <div class="cost-summary-bar" id="cost-summary-bar"></div>
+    <div id="cost-modal-body">
+      <table class="cost-table">
+        <thead><tr>
+          <th>#</th><th>Time</th><th>Weapon</th><th>Base</th>
+          <th>Target</th><th>Class</th><th>PK</th><th>Outcome</th><th style="text-align:right">Cost</th>
+        </tr></thead>
+        <tbody id="cost-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  ADS-C2 Frontend
+// ═══════════════════════════════════════════════════════════════════════
+
+const API = '';   // same origin
+let ws;
+let state = { threats: [], effectors: [], bases: [], recent_orders: [], cost_log: [], event_log: [], tick: 0 };
+let selectedThreatId = null;
+let selectedEffectorId = null;
+let showRanges = false;
+let neutralizedCount = 0;
+
+// ── Map initialisation ─────────────────────────────────────────────
+const map = L.map('map', {
+  center: [62.0, 17.0],   // centred on Sweden
+  zoom: 5,
+  zoomControl: true,
+  attributionControl: true,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO',
+  subdomains: 'abcd', maxZoom: 19,
+}).addTo(map);
+
+// ── Leaflet layers ─────────────────────────────────────────────────
+const threatLayer    = L.layerGroup().addTo(map);
+const radarBlipLayer = L.layerGroup().addTo(map);   // raw (noisy) radar returns
+const threatTrackLayer = L.layerGroup().addTo(map); // trajectory lines (current pos → target)
+const effectorLayer  = L.layerGroup().addTo(map);
+const engagementLayer= L.layerGroup().addTo(map);
+const rangeLayer     = L.layerGroup();   // not added yet
+
+// Map: id → marker
+const threatMarkers   = {};
+const radarBlipMarkers= {};   // raw radar return blips
+const effectorMarkers = {};
+const rangeCircles    = {};
+
+// Protected zone marker
+const protectedTargets = [
+  { lat: 59.33, lon: 18.07, label: 'Stockholm' },
+  { lat: 57.71, lon: 11.97, label: 'Gothenburg' },
+  { lat: 55.61, lon: 13.00, label: 'Malmö' },
+  { lat: 67.86, lon: 20.23, label: 'Kiruna' },
+];
+protectedTargets.forEach(t => {
+  L.circleMarker([t.lat, t.lon], {
+    radius: 10, color: '#ff3860', fillColor: '#ff3860', fillOpacity: 0.15, weight: 2,
+  }).bindTooltip(t.label, { permanent: true, direction: 'right', className: 'leaflet-tooltip-dark' })
+   .addTo(map);
+});
+
+// ── Threat icons ───────────────────────────────────────────────────
+const THREAT_ICONS = {
+  drone:              { symbol: '▲', color: '#00ff9d' },
+  cruise:             { symbol: '→', color: '#ffb300' },
+  fighter:            { symbol: '✈', color: '#ff3860' },
+  ballistic:          { symbol: '↑', color: '#ff00ff' },
+  loitering_munition: { symbol: '◉', color: '#ff6600' },
+};
+
+function makeThreatIcon(threat) {
+  const cfg    = THREAT_ICONS[threat.threat_class] || THREAT_ICONS.drone;
+  const cls    = threat.status === 'engaged' ? 'threat-icon-engaged' : 'threat-icon-active';
+  const rotate = `transform: rotate(${threat.heading}deg)`;
+  // Track quality dims the glow: good = bright, poor = dim
+  const tq = threat.track_quality || 0;
+  const alpha = (0.4 + 0.6 * tq).toFixed(2);
+  return L.divIcon({
+    className: '',
+    html: `<div class="${cls}" style="color:${cfg.color};font-size:18px;${rotate};text-shadow:0 0 ${Math.round(4+8*tq)}px ${cfg.color};opacity:${alpha};">${cfg.symbol}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+const BASE_ICON = L.divIcon({
+  className: '',
+  html: '<div style="font-size:20px;filter:drop-shadow(0 0 6px #00d4ff);">⬡</div>',
+  iconSize: [24, 24], iconAnchor: [12, 12],
+});
+
+// ── WebSocket ──────────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen  = () => { document.getElementById('sim-dot').className = 'dot'; };
+  ws.onclose = () => {
+    document.getElementById('sim-dot').className = 'dot danger';
+    setTimeout(connect, 2000);
+  };
+  ws.onmessage = e => {
+    const data = JSON.parse(e.data);
+    applyState(data);
+  };
+}
+
+// ── State application ──────────────────────────────────────────────
+function applyState(s) {
+  // Count neutralized from orders (hit)
+  if (s.recent_orders) {
+    neutralizedCount = s.recent_orders.filter(o => o.outcome === 'hit').length;
+  }
+
+  state = s;
+  updateStats(s);
+  updateThreatList(s.threats);
+  updateEffectorList(s.effectors, s.bases);
+  updateBaseReadiness(s.base_readiness || []);
+  updateMap(s.threats, s.effectors);
+  updateOrders(s.recent_orders || []);
+  updateLog(s.event_log || []);
+}
+
+function updateStats(s) {
+  document.getElementById('stat-threats').textContent    = s.threats.filter(t=>t.status==='active').length;
+  document.getElementById('stat-engaged').textContent    = s.threats.filter(t=>t.status==='engaged').length;
+  document.getElementById('stat-effectors').textContent  = s.effectors.filter(e=>e.status==='ready').length;
+  document.getElementById('stat-neutralized').textContent= neutralizedCount;
+  document.getElementById('stat-tick').textContent       = s.tick;
+  document.getElementById('threat-badge').textContent    = s.threats.filter(t=>t.status!=='neutralized').length;
+  document.getElementById('effector-badge').textContent  = s.effectors.filter(e=>e.status==='ready').length;
+  document.getElementById('orders-badge').textContent    = (s.recent_orders||[]).length;
+  // Mission cost
+  const cost = s.total_cost_usd || 0;
+  document.getElementById('stat-cost').textContent =
+    cost >= 1e6 ? `$${(cost/1e6).toFixed(1)}M` :
+    cost >= 1e3 ? `$${(cost/1e3).toFixed(0)}K` :
+    `$${cost.toFixed(0)}`;
+  // Escalation reserve = ready effectors not currently assigned to an engaged threat
+  const engagedThreatCount = s.threats.filter(t => t.status === 'engaged').length;
+  const reserveCount = Math.max(0, s.effectors.filter(e => e.status === 'ready').length - engagedThreatCount);
+  const reserveEl = document.getElementById('stat-reserve');
+  if (reserveEl) {
+    reserveEl.textContent = reserveCount;
+    reserveEl.style.color = reserveCount <= 1 ? 'var(--danger)' : reserveCount <= 3 ? 'var(--warn)' : 'var(--ok)';
+  }
+}
+
+// ── Base Readiness panel ───────────────────────────────────────────
+function updateBaseReadiness(readiness) {
+  const el = document.getElementById('base-readiness-panel');
+  if (!el || !readiness || !readiness.length) return;
+  const C = { GREEN: '#00ff9d', AMBER: '#ffb300', RED: '#ff3860', BLACK: '#444' };
+  el.innerHTML = readiness.map(b => {
+    const shortLabel = b.label.split(' ').slice(0,3).join(' ');
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 2px;border-bottom:1px solid #0a1e33">
+      <span style="font-size:0.72rem;color:var(--text-dim);flex:1">${shortLabel}</span>
+      <div style="display:flex;align-items:center;gap:5px">
+        <div style="width:7px;height:7px;border-radius:50%;background:${C[b.status]};box-shadow:0 0 5px ${C[b.status]}"></div>
+        <span style="font-size:0.68rem;font-weight:700;color:${C[b.status]};width:36px">${b.status}</span>
+        <span style="font-size:0.65rem;color:var(--text-dim)">${b.ready}/${b.total}</span>
+        <div style="width:38px;height:4px;background:#1a3050;border-radius:2px">
+          <div style="height:100%;width:${Math.round(b.ammo_ratio*100)}%;background:${C[b.status]};border-radius:2px"></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Threat List ────────────────────────────────────────────────────────
+function tttColor(s) {
+  if (s < 120) return 'var(--danger)';
+  if (s < 300) return 'var(--warn)';
+  return 'var(--text-dim)';
+}
+function priorityClass(p) {
+  if (p >= 8) return 'high';
+  if (p >= 5) return 'med';
+  return 'low';
+}
+
+function updateThreatList(threats) {
+  const el = document.getElementById('threat-list');
+  const active = threats.filter(t => t.status !== 'neutralized').sort((a,b) => b.priority - a.priority);
+  
+  el.innerHTML = active.map(t => {
+    const ttt = estimateTTT(t);
+    const sel = t.id === selectedThreatId ? ' selected' : '';
+    // Kalman track quality
+    const tq       = t.track_quality || 0;
+    const tqPct    = Math.round(tq * 100);
+    const tqColor  = tq > 0.7 ? 'var(--accent2)' : tq > 0.4 ? 'var(--warn)' : 'var(--danger)';
+    const tqClass  = tq > 0.7 ? 'good' : tq > 0.4 ? 'medium' : 'poor';
+    const uncText  = t.position_uncertainty_km != null ? `±${t.position_uncertainty_km.toFixed(1)}km` : '';
+    const kfSpeed  = t.estimated_speed_kmh_kf ? Math.round(t.estimated_speed_kmh_kf) : '';
+    return `
+    <div class="threat-card ${t.threat_class}${sel}" onclick="selectThreat('${t.id}')">
+      <div class="threat-top">
+        <div>
+          <div class="threat-label">${t.label}<span class="kf-badge ${tqClass}">KF ${tqPct}%</span></div>
+          <div class="threat-class ${t.threat_class}">${t.threat_class.replace('_',' ').toUpperCase()}</div>
+        </div>
+        <span class="priority-badge ${priorityClass(t.priority)}">P${t.priority}</span>
+      </div>
+      <div class="threat-meta">
+        ALT: ${Math.round(t.altitude_m)}m &nbsp;|  SPD: ${Math.round(t.speed_kmh)}km/h<br>
+        HDG: ${Math.round(t.heading)}° &nbsp;|  <span style="color:${tttColor(ttt)}" class="threat-ttt">ETA: ${formatTime(ttt)}</span>
+      </div>
+      <div class="kf-bar"><div class="kf-fill" style="width:${tqPct}%;background:${tqColor}"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:3px">
+        <div class="threat-status ${t.status}">${t.status.toUpperCase()}</div>
+        <div style="font-size:0.62rem;color:var(--text-dim);font-family:var(--font-mono)">${uncText}${kfSpeed ? ' | Δv='+kfSpeed+'km/h' : ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function estimateTTT(t) {
+  // client-side estimate using Stockholm as default target
+  const TARGET = { lat: 59.33, lon: 18.07 };
+  const dist = haversine(t.lat, t.lon, TARGET.lat, TARGET.lon);
+  return (dist / Math.max(t.speed_kmh, 1)) * 3600;
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatTime(s) {
+  if (s > 3600) return `${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m`;
+  if (s > 60)   return `${Math.floor(s/60)}m${Math.floor(s%60)}s`;
+  return `${Math.floor(s)}s`;
+}
+
+// ── Effector List ──────────────────────────────────────────────────
+const EFFECTOR_ICONS = { missile: '🚀', anti_air: '🔫', drone: '🛸', aircraft: '✈️', kinetic_missile: '💥', directed_energy: '⚡' };
+
+function updateEffectorList(effectors, bases) {
+  const el = document.getElementById('effector-list');
+  const byBase = {};
+  bases.forEach(b => { byBase[b.id] = { label: b.label, effectors: [] }; });
+  effectors.forEach(e => {
+    if (byBase[e.base_id]) byBase[e.base_id].effectors.push(e);
+  });
+
+  el.innerHTML = Object.values(byBase).map(b => `
+    <div class="base-group">
+      <div class="base-header"><span>${b.label}</span><span style="color:var(--accent2)">${b.effectors.filter(e=>e.status==='ready').length}/${b.effectors.length} ready</span></div>
+      ${b.effectors.map(e => {
+        const ammoRatio = e.ammo === -1 ? 1 : (e.ammo / Math.max(e.max_ammo,1));
+        const ammoClass = ammoRatio < 0.25 ? 'critical' : ammoRatio < 0.5 ? 'low' : '';
+        const dotClass  = e.status;
+        const ammoText  = e.ammo === -1 ? '∞' : `${e.ammo}/${e.max_ammo}`;
+        const salvoText = e.salvo_size > 1 ? ` ×${e.salvo_size}` : '';
+        const costText  = e.cost_per_shot_usd >= 1e6 ? ` $${(e.cost_per_shot_usd/1e6).toFixed(1)}M/rnd` :
+                          e.cost_per_shot_usd > 0    ? ` $${e.cost_per_shot_usd}/rnd` : '';
+        const weatherBadge = e.weather_degradation ? ' ☁' : '';
+        const sel       = e.id === selectedEffectorId ? 'style="border-color:var(--accent2)"' : '';
+        return `<div class="effector-card" ${sel} onclick="selectEffector('${e.id}')">
+          <div class="effector-status-dot ${dotClass}"></div>
+          <span class="effector-icon">${EFFECTOR_ICONS[e.effector_type] || '●'}</span>
+          <div class="effector-info">
+            <div class="effector-label">${e.label}${weatherBadge}</div>
+            <div class="effector-meta">${e.effector_type.toUpperCase()} | ${e.range_km}km | ${ammoText} rds${salvoText}${costText} ${e.status === 'reloading' ? `| RLD ${e.reload_ticks_remaining}t` : ''}</div>
+            <div class="ammo-bar"><div class="ammo-fill ${ammoClass}" style="width:${Math.round(ammoRatio*100)}%"></div></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+// ── Map update ─────────────────────────────────────────────────────
+function updateMap(threats, effectors) {
+  // Update threat markers  –  use KF estimated position when available
+  const seenT = new Set();
+  threats.forEach(t => {
+    seenT.add(t.id);
+    if (t.status === 'neutralized') {
+      if (threatMarkers[t.id])   { threatLayer.removeLayer(threatMarkers[t.id]);    delete threatMarkers[t.id]; }
+      if (radarBlipMarkers[t.id]){ radarBlipLayer.removeLayer(radarBlipMarkers[t.id]); delete radarBlipMarkers[t.id]; }
+      return;
+    }
+
+    // Primary marker: Kalman-estimated position (or true pos if KF not yet ready)
+    const dispLat = t.estimated_lat || t.lat;
+    const dispLon = t.estimated_lon || t.lon;
+    const latlng  = [dispLat, dispLon];
+
+    if (threatMarkers[t.id]) {
+      threatMarkers[t.id].setLatLng(latlng).setIcon(makeThreatIcon(t));
+    } else {
+      const m = L.marker(latlng, { icon: makeThreatIcon(t) })
+        .bindPopup(threatPopup(t))
+        .on('click', () => selectThreat(t.id));
+      threatLayer.addLayer(m);
+      threatMarkers[t.id] = m;
+    }
+    if (threatMarkers[t.id].isPopupOpen()) {
+      threatMarkers[t.id].setPopupContent(threatPopup(t));
+    }
+
+    // Radar blip: raw (noisy) measurement  –  shown as a small dim dot
+    if (t.radar_lat && t.radar_lon) {
+      const cfg = THREAT_ICONS[t.threat_class] || THREAT_ICONS.drone;
+      const blipIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:6px;height:6px;border-radius:50%;background:${cfg.color};opacity:0.35;"></div>`,
+        iconSize: [6, 6], iconAnchor: [3, 3],
+      });
+      if (radarBlipMarkers[t.id]) {
+        radarBlipMarkers[t.id].setLatLng([t.radar_lat, t.radar_lon]).setIcon(blipIcon);
+      } else {
+        const rb = L.marker([t.radar_lat, t.radar_lon], { icon: blipIcon, interactive: false });
+        radarBlipLayer.addLayer(rb);
+        radarBlipMarkers[t.id] = rb;
+      }
+    }
+  });
+  Object.keys(threatMarkers).forEach(id => {
+    if (!seenT.has(id)) {
+      threatLayer.removeLayer(threatMarkers[id]);       delete threatMarkers[id];
+      if (radarBlipMarkers[id]) { radarBlipLayer.removeLayer(radarBlipMarkers[id]); delete radarBlipMarkers[id]; }
+    }
+  });
+
+  // Update effector markers (static positions)
+  const seenE = new Set();
+  effectors.forEach(e => {
+    seenE.add(e.id);
+    if (!effectorMarkers[e.id]) {
+      const html = `<div style="font-size:14px;color:#00d4ff;text-shadow:0 0 6px #00d4ff;">◈</div>`;
+      const icon = L.divIcon({ className:'', html, iconSize:[16,16], iconAnchor:[8,8] });
+      const m = L.marker([e.lat, e.lon], { icon })
+        .bindPopup(effectorPopup(e))
+        .on('click', () => selectEffector(e.id));
+      effectorLayer.addLayer(m);
+      effectorMarkers[e.id] = m;
+    }
+
+    // Range circles
+    if (showRanges) {
+      if (!rangeCircles[e.id]) {
+        const c = L.circle([e.lat, e.lon], {
+          radius: e.range_km * 1000,
+          className: 'range-circle',
+        });
+        rangeLayer.addLayer(c);
+        rangeCircles[e.id] = c;
+      }
+    }
+  });
+
+  // Threat trajectory lines  current KF pos → target
+  threatTrackLayer.clearLayers();
+  threats.forEach(t => {
+    if ((t.status !== 'active' && t.status !== 'engaged') || !t.target_lat) return;
+    const cfg   = THREAT_ICONS[t.threat_class] || { color: '#ff3860' };
+    const start = [t.estimated_lat || t.lat, t.estimated_lon || t.lon];
+    L.polyline([start, [t.target_lat, t.target_lon]], {
+      color: cfg.color, weight: 1, opacity: 0.28, dashArray: '5,12',
+    }).addTo(threatTrackLayer);
+  });
+
+  // Draw engagement lines for pending orders
+  engagementLayer.clearLayers();
+  (state.recent_orders || []).filter(o => o.outcome === 'pending').forEach(o => {
+    const thr = threats.find(t => t.id === o.threat_id);
+    const eff = effectors.find(e => e.id === o.effector_id);
+    if (thr && eff) {
+      const color = o.effector_type === 'missile' ? '#ff3860' : o.effector_type === 'aircraft' ? '#00d4ff' : '#00ff9d';
+      L.polyline([[eff.lat, eff.lon],[thr.lat, thr.lon]], {
+        color, weight: 1.5, opacity: 0.7, dashArray: '6,4',
+      }).addTo(engagementLayer);
+    }
+  });
+}
+
+function threatPopup(t) {
+  const tq    = t.track_quality || 0;
+  const tqBar = `<div style="height:4px;background:#1a3050;border-radius:2px;margin:4px 0"><div style="height:100%;width:${Math.round(tq*100)}%;background:${tq>0.7?'#00ff9d':tq>0.4?'#ffb300':'#ff3860'};border-radius:2px"></div></div>`;
+  const kfLine = t.estimated_speed_kmh_kf
+    ? `KF speed: ${Math.round(t.estimated_speed_kmh_kf)} km/h<br>Pos. uncertainty: ±${t.position_uncertainty_km != null ? t.position_uncertainty_km.toFixed(2) : '?'} km<br>`
+    : '';
+  const tgtLine = t.target_label
+    ? `<span style="color:var(--danger)">●● TARGET: ${t.target_label}</span><br>`
+    : '';
+  const dtaLine = t.priority >= 9
+    ? `<span style="color:#ff00ff;font-weight:700">⚠ P${t.priority} – DOUBLE-TAP doctrine active</span><br>`
+    : '';
+  return `<strong>${t.label}</strong> [${t.threat_class.toUpperCase()}]<br>
+  Status: ${t.status}<br>
+  Priority: P${t.priority}<br>
+  Speed: ${Math.round(t.speed_kmh)} km/h<br>
+  Alt: ${Math.round(t.altitude_m)} m<br>
+  Heading: ${Math.round(t.heading)}°<br>
+  ETA: ${formatTime(estimateTTT(t))}<br>
+  ${tgtLine}${dtaLine}<hr style="border-color:#1a3050;margin:4px 0">
+  <strong style="color:#00d4ff">Kalman Track</strong><br>
+  ${kfLine}Track quality: ${Math.round(tq*100)}%${tqBar}
+  <button id="engage-btn-${t.id}" onclick="manualEngage('${t.id}', this)" style="margin-top:6px;background:var(--danger);color:#fff;border:none;padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px">⚡ AUTO-ENGAGE</button>
+  <div id="engage-result-${t.id}" style="font-size:10px;margin-top:4px;color:var(--accent)"></div>`;
+}
+
+function effectorPopup(e) {
+  return `<strong>${e.label}</strong><br>
+  Type: ${e.effector_type}<br>
+  Status: ${e.status}<br>
+  Range: ${e.range_km} km<br>
+  Ammo: ${e.ammo === -1 ? '∞' : `${e.ammo}/${e.max_ammo}`}`;
+}
+
+// ── Orders ─────────────────────────────────────────────────────────
+function updateOrders(orders) {
+  const el = document.getElementById('orders-list');
+  const recent = [...orders].reverse().slice(0, 30);
+  el.innerHTML = recent.map(o => {
+    const icon = o.outcome === 'hit' ? '✅' : o.outcome === 'miss' ? '❌' : '⏳';
+    return `<div class="order-row">
+      <span class="order-outcome">${icon}</span>
+      <div class="order-bodies">
+        <div class="order-main">${o.effector_label} → ${o.threat_label} [${o.threat_class}]</div>
+        <div class="order-sub">${o.rationale}</div>
+      </div>
+      <span class="order-pk">${Math.round(o.pk*100)}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Event log ──────────────────────────────────────────────────────
+function updateLog(log) {
+  const el = document.getElementById('event-log');
+  const recent = [...log].reverse().slice(0, 50);
+  el.innerHTML = recent.map(e => `
+    <div class="log-entry ${e.category}">
+      <span class="log-time">${e.time}</span>${e.msg}
+    </div>`).join('');
+}
+
+// ── Selection ──────────────────────────────────────────────────────
+function selectThreat(id) {
+  selectedThreatId = id;
+  const t = state.threats.find(x => x.id === id);
+  if (t && threatMarkers[id]) {
+    map.panTo([t.lat, t.lon]);
+    threatMarkers[id].openPopup();
+  }
+  updateThreatList(state.threats);
+}
+
+function selectEffector(id) {
+  selectedEffectorId = id;
+  const e = state.effectors.find(x => x.id === id);
+  if (e && effectorMarkers[id]) {
+    map.panTo([e.lat, e.lon]);
+    effectorMarkers[id].openPopup();
+  }
+  updateEffectorList(state.effectors, state.bases);
+}
+
+// ── Cost Breakdown Modal ───────────────────────────────────────────
+function fmtCost(c) {
+  if (c >= 1e6) return `$${(c/1e6).toFixed(2)}M`;
+  if (c >= 1e3) return `$${(c/1e3).toFixed(0)}K`;
+  return c > 0 ? `$${c.toFixed(0)}` : '—';
+}
+
+function showCostModal() {
+  renderCostBreakdown(state ? state.cost_log || [] : []);
+  document.getElementById('cost-modal-backdrop').classList.add('open');
+}
+
+function closeCostModal() {
+  document.getElementById('cost-modal-backdrop').classList.remove('open');
+}
+
+function renderCostBreakdown(log) {
+  const rows = [...log].reverse();   // newest first
+
+  // Summary bar
+  const totalCost   = rows.reduce((s, o) => s + (o.cost_usd || 0), 0);
+  const hits        = rows.filter(o => o.outcome === 'hit');
+  const misses      = rows.filter(o => o.outcome === 'miss');
+  const hitCost     = hits.reduce((s, o) => s + (o.cost_usd || 0), 0);
+  const missCost    = misses.reduce((s, o) => s + (o.cost_usd || 0), 0);
+  // Cost per kill
+  const cpk = hits.length > 0 ? hitCost / hits.length : 0;
+
+  document.getElementById('cost-summary-bar').innerHTML = `
+    <div class="cost-summary-item"><span class="val">${fmtCost(totalCost)}</span><span class="lbl">Total Spent</span></div>
+    <div class="cost-summary-item"><span class="val" style="color:var(--ok)">${fmtCost(hitCost)}</span><span class="lbl">Kills (${hits.length})</span></div>
+    <div class="cost-summary-item"><span class="val" style="color:var(--danger)">${fmtCost(missCost)}</span><span class="lbl">Misses (${misses.length})</span></div>
+    <div class="cost-summary-item"><span class="val" style="color:var(--accent)">${fmtCost(cpk)}</span><span class="lbl">Cost/Kill</span></div>
+    <div class="cost-summary-item"><span class="val">${rows.length}</span><span class="lbl">Engagements</span></div>
+  `;
+
+  // Table rows
+  const tbody = document.getElementById('cost-table-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-dim);padding:20px">No engagements fired yet</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((o, i) => {
+    const outcome  = o.outcome || 'pending';
+    const icon     = outcome === 'hit' ? '✅' : outcome === 'miss' ? '❌' : '⏳';
+    const t        = new Date(o.timestamp * 1000);
+    const timeStr  = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+    const costStr  = fmtCost(o.cost_usd || 0);
+    const pkPct    = Math.round((o.pk || 0) * 100);
+    const baseLabel= o.base_label || o.base_id || '—';
+    return `<tr class="${outcome}">
+      <td style="color:var(--text-dim)">${rows.length - i}</td>
+      <td style="font-family:var(--font-mono);color:var(--text-dim)">${timeStr}</td>
+      <td><strong>${o.effector_label}</strong></td>
+      <td style="color:var(--text-dim)">${baseLabel}</td>
+      <td><strong>${o.threat_label}</strong></td>
+      <td style="color:var(--text-dim)">${o.threat_class}</td>
+      <td style="font-family:var(--font-mono)">${pkPct}%</td>
+      <td><span class="outcome-badge ${outcome}">${icon} ${outcome.toUpperCase()}</span></td>
+      <td style="text-align:right;font-family:var(--font-mono);color:${o.cost_usd > 1e6 ? 'var(--danger)' : o.cost_usd > 100000 ? 'var(--warn)' : 'var(--ok)'}">${costStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── AI Optimiser ───────────────────────────────────────────────────
+let aiOpen = false;
+function toggleAI() {
+  aiOpen = !aiOpen;
+  document.getElementById('ai-overlay').classList.toggle('open', aiOpen);
+}
+
+async function runAI() {
+  const res  = await fetch('/api/engage/optimise', { method: 'POST' });
+  const data = await res.json();
+
+  aiOpen = true;
+  document.getElementById('ai-overlay').classList.add('open');
+  const body = document.getElementById('ai-overlay-body');
+
+  const warningsHtml = (data.warnings || []).map(w =>
+    `<div class="warn-card ${w.level}"><strong>[${w.level}]</strong> ${w.msg}</div>`
+  ).join('');
+
+  const ordersHtml = (data.orders || []).map(o =>
+    `<div class="recommendation-card">
+      <div class="rec-header">
+        <span class="rec-title">${o.effector_label} → ${o.threat_label}</span>
+        <span class="rec-pk">PK ${Math.round(o.pk*100)}%</span>
+      </div>
+      <div class="rec-body">${o.rationale}<br>ETA: ${formatTime(o.time_to_intercept_s)} | Dist: ${Math.round(o.distance_km)}km</div>
+      <div class="rec-actions">
+        <button class="rec-btn approve" onclick="executeOrder('${o.effector_id}','${o.threat_id}',this)">✓ COMMIT</button>
+        <button class="rec-btn reject"  onclick="this.closest('.recommendation-card').style.opacity='0.3'">✕ REJECT</button>
+      </div>
+    </div>`
+  ).join('') || '<div style="color:var(--text-dim);font-size:0.8rem;padding:10px">No actionable orders – all threats engaged or no effectors in range.</div>';
+
+  body.innerHTML = warningsHtml + ordersHtml;
+}
+
+async function executeOrder(effectorId, threatId, btn) {
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  const res = await fetch('/api/engage/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ effector_id: effectorId, threat_id: threatId }),
+  });
+  if (res.ok) {
+    btn.textContent = '✓ SENT';
+    btn.style.background = 'var(--ok)';
+  } else {
+    const err = await res.json();
+    btn.textContent = `✗ ${err.detail || 'ERR'}`;
+    btn.style.background = 'var(--danger)';
+  }
+}
+
+async function manualEngage(threatId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Selecting...'; }
+  const res = await fetch('/api/engage/auto', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threat_id: threatId }),
+  });
+  const data = await res.json();
+  if (res.ok) {
+    if (btn) { btn.textContent = '✓ FIRED'; btn.style.background = 'var(--ok)'; }
+    const info = document.getElementById(`engage-result-${threatId}`);
+    if (info) {
+      const cost = data.pk ? `PK=${Math.round(data.pk*100)}%` : '';
+      const dt   = data.double_tap ? ` + ⚡${data.double_tap} [DOUBLE-TAP]` : '';
+      info.textContent = `→ ${data.selected_effector} (score ${data.score}) ${cost}${dt}`;
+      if (data.double_tap) info.style.color = '#ff00ff';
+    }
+  } else {
+    if (btn) { btn.textContent = '✗ No asset'; btn.style.background = '#555'; }
+    const info = document.getElementById(`engage-result-${threatId}`);
+    if (info) info.textContent = data.detail || 'No effector in range';
+  }
+}
+
+// ── Spawn threats ──────────────────────────────────────────────────
+async function spawnThreat(cls) {
+  await fetch('/api/threats/spawn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threat_class: cls }),
+  });
+}
+
+// ── Range rings ────────────────────────────────────────────────────
+function toggleRanges() {
+  showRanges = !showRanges;
+  if (showRanges) {
+    map.addLayer(rangeLayer);
+  } else {
+    rangeLayer.clearLayers();
+    Object.keys(rangeCircles).forEach(k => delete rangeCircles[k]);
+    map.removeLayer(rangeLayer);
+  }
+}
+
+// ── Reset ──────────────────────────────────────────────────────────
+async function resetSim() {
+  if (!confirm('Reset scenario? All current state will be cleared.')) return;
+  neutralizedCount = 0;
+  await fetch('/api/sim/reset', { method: 'POST' });
+  // Clear map
+  [threatLayer, effectorLayer, engagementLayer, rangeLayer].forEach(l => l.clearLayers());
+  Object.keys(threatMarkers).forEach(k => delete threatMarkers[k]);
+  Object.keys(effectorMarkers).forEach(k => delete effectorMarkers[k]);
+}
+
+// ── Boot ───────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>
