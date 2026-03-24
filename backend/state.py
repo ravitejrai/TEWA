@@ -29,10 +29,11 @@ SCENARIO_BASES = [
         "label": "F 21 Luleå-Kallax Wing",
         "lat": 65.54, "lon": 22.12,   # northernmost fighter wing
         "effectors": [
-            {"type": EffectorType.MISSILE,  "label": "GBAD Bty Alpha",   "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 500_000},
-            {"type": EffectorType.MISSILE,  "label": "GBAD Bty Bravo",   "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 500_000},
-            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 1",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 120_000},
-            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 2",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 120_000},
+            # GBADs moved to Såtenäs where no JAS-39 competes (they fired 0 shots here)
+            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 1",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 1_260_000},
+            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 2",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 1_260_000},
+            # SHORAD moved here from Uppsala – gives Luleå base self-defence under the JAS-39 umbrella
+            {"type": EffectorType.ANTI_AIR, "label": "SHORAD Plt 1",     "range_km": 40,  "ammo": 20, "max_ammo": 20, "cost_per_shot_usd": 315_000},
         ],
     },
     {
@@ -40,10 +41,14 @@ SCENARIO_BASES = [
         "label": "F 16 Uppsala Wing",
         "lat": 59.90, "lon": 17.59,   # central Sweden, near Stockholm
         "effectors": [
-            {"type": EffectorType.MISSILE,  "label": "GBAD Bty Charlie", "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 500_000},
-            {"type": EffectorType.ANTI_AIR, "label": "SHORAD Plt 1",     "range_km": 40,  "ammo": 20, "max_ammo": 20, "cost_per_shot_usd": 30_000},
-            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 3",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 120_000},
-            {"type": EffectorType.DRONE,    "label": "Heron TP Flt A",   "range_km": 300, "ammo":-1,  "max_ammo":-1,  "cost_per_shot_usd": 5_000},
+            {"type": EffectorType.MISSILE,  "label": "GBAD Bty Charlie", "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 5_250_000},
+            # SHORAD Plt 1 moved to Luleå; Plt 2 rotated here from Blekinge to maintain Stockholm leaker coverage
+            {"type": EffectorType.ANTI_AIR, "label": "SHORAD Plt 2",     "range_km": 40,  "ammo": 20, "max_ammo": 20, "cost_per_shot_usd": 315_000},
+            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 3",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 1_260_000},
+            {"type": EffectorType.DRONE,    "label": "Heron TP Flt A",   "range_km": 300, "ammo":-1,  "max_ammo":-1,  "cost_per_shot_usd": 52_500},
+            # DEW-HELIOS-300: covers eastern/Baltic approach corridor near Stockholm
+            {"type": EffectorType.DIRECTED_ENERGY, "label": "HELIOS-300 #2", "range_km": 12, "ammo": -1, "max_ammo": -1,
+             "cost_per_shot_usd": 158, "min_range_km": 0.1, "max_altitude_m": 6_096, "salvo_size": 1, "cooldown_ticks": 1, "weather_degradation": True},
         ],
     },
     {
@@ -51,10 +56,13 @@ SCENARIO_BASES = [
         "label": "F 17 Blekinge Wing",
         "lat": 56.27, "lon": 15.27,   # southern coastal wing (Ronneby)
         "effectors": [
-            {"type": EffectorType.MISSILE,  "label": "GBAD Bty Delta",   "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 500_000},
-            {"type": EffectorType.ANTI_AIR, "label": "SHORAD Plt 2",     "range_km": 40,  "ammo": 20, "max_ammo": 20, "cost_per_shot_usd": 30_000},
-            {"type": EffectorType.DRONE,    "label": "Heron TP Flt B",   "range_km": 300, "ammo":-1,  "max_ammo":-1,  "cost_per_shot_usd": 5_000},
-            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 4",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 120_000},
+            {"type": EffectorType.MISSILE,  "label": "GBAD Bty Delta",   "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 5_250_000},
+            # SHORAD Plt 2 rotated to Uppsala for Stockholm leaker coverage; GBAD + Heron + HELIOS cover Blekinge
+            {"type": EffectorType.DRONE,    "label": "Heron TP Flt B",   "range_km": 300, "ammo":-1,  "max_ammo":-1,  "cost_per_shot_usd": 52_500},
+            {"type": EffectorType.AIRCRAFT, "label": "JAS-39 Sqn 4",     "range_km": 800, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 1_260_000},
+            # DEW-HELIOS-300: covers southern Baltic corridor (Gdansk/Malmö axis)
+            {"type": EffectorType.DIRECTED_ENERGY, "label": "HELIOS-300 #3", "range_km": 12, "ammo": -1, "max_ammo": -1,
+             "cost_per_shot_usd": 158, "min_range_km": 0.1, "max_altitude_m": 6_096, "salvo_size": 1, "cooldown_ticks": 1, "weather_degradation": True},
         ],
     },
     {
@@ -62,14 +70,18 @@ SCENARIO_BASES = [
         "label": "F 7 Såtenäs Wing",
         "lat": 58.43, "lon": 12.72,   # western Sweden, near Gothenburg
         "effectors": [
-            {"type": EffectorType.MISSILE,         "label": "Patriot Bty 1",    "range_km": 250, "ammo": 6,  "max_ammo": 6,  "cost_per_shot_usd": 3_000_000},
-            {"type": EffectorType.ANTI_AIR,        "label": "SHORAD Plt 3",     "range_km": 40,  "ammo": 20, "max_ammo": 20, "cost_per_shot_usd": 30_000},
+            # GBAD Alpha + Bravo moved here from Luleå – no JAS-39 at Såtenäs so GBAD wins
+            # cost competition vs Patriot (5.25M vs 31.5M) and fills the 120-250km coverage gap
+            {"type": EffectorType.MISSILE,         "label": "GBAD Bty Alpha",   "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 5_250_000},
+            {"type": EffectorType.MISSILE,         "label": "GBAD Bty Bravo",   "range_km": 180, "ammo": 8,  "max_ammo": 8,  "cost_per_shot_usd": 5_250_000},
+            {"type": EffectorType.MISSILE,         "label": "Patriot Bty 1",    "range_km": 250, "ammo": 6,  "max_ammo": 6,  "cost_per_shot_usd": 31_500_000},
+            {"type": EffectorType.ANTI_AIR,        "label": "SHORAD Plt 3",     "range_km": 40,  "ammo": 20, "max_ammo": 20, "cost_per_shot_usd": 315_000},
             # Gemini spec: KIN-PAC3-MSE – salvo_policy=2, reload=3600s, base_pk=0.85
             {"type": EffectorType.KINETIC_MISSILE, "label": "PAC-3 MSE Bty 1",  "range_km": 120, "ammo": 16, "max_ammo": 16,
-             "cost_per_shot_usd": 4_000_000, "min_range_km": 5, "max_altitude_m": 30_480, "salvo_size": 2, "weather_degradation": False},
-            # Gemini spec: DEW-HELIOS-300 – 300kW laser, $15/shot, weather_degradation=true, max_alt 20000ft
+             "cost_per_shot_usd": 42_000_000, "min_range_km": 5, "max_altitude_m": 30_480, "salvo_size": 2, "weather_degradation": False},
+            # Gemini spec: DEW-HELIOS-300 – 300kW laser, ~158 kr/shot, weather_degradation=true, max_alt 20000ft
             {"type": EffectorType.DIRECTED_ENERGY, "label": "HELIOS-300 #1",    "range_km": 12,  "ammo": -1,  "max_ammo": -1,
-             "cost_per_shot_usd": 15, "min_range_km": 0.1, "max_altitude_m": 6_096, "salvo_size": 1, "cooldown_ticks": 1, "weather_degradation": True},
+             "cost_per_shot_usd": 158, "min_range_km": 0.1, "max_altitude_m": 6_096, "salvo_size": 1, "cooldown_ticks": 1, "weather_degradation": True},
         ],
     },
 ]

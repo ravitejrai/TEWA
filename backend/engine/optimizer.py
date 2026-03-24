@@ -42,18 +42,18 @@ from backend.models import (
 )
 
 # Weights for score components
-W_PK          = 0.35
-W_URGENCY     = 0.30
-W_COST_EFF    = 0.20   # prefer cheaper weapons unless threat priority demands otherwise
+W_PK          = 0.55   # raised from 0.35 – PK is the primary assignment driver
+W_URGENCY     = 0.20   # reduced from 0.30 to rebalance after W_PK increase
+W_COST_EFF    = 0.15   # prefer cheaper weapons unless threat priority demands otherwise
 W_AMMO_CONS   = 0.05
-W_RANGE_MARGIN= 0.10
+W_RANGE_MARGIN= 0.05   # reduced from 0.10 to rebalance
 
 PROTECTED_LAT = 59.33   # Stockholm
 PROTECTED_LON = 18.07
 INTERCEPT_HORIZON_S = 600   # threats arriving in <10 min are critical
 
-# Cost ceiling for normalisation – PAC-3 salvo ($8M) is the most expensive
-MAX_ENGAGEMENT_COST_USD = 8_000_000
+# Cost ceiling for normalisation – PAC-3 salvo (84 MSEK) is the most expensive
+MAX_ENGAGEMENT_COST_USD = 84_000_000   # SEK: 42M × salvo_size=2
 
 # Estimated weapon/aircraft intercept speed by effector type (km/h)
 EFFECTOR_SPEED_KMH: dict = {
@@ -126,6 +126,20 @@ def _intercept_window_s(effector: Effector, threat: Threat) -> float:
     return ttt - travel_s
 
 
+# Minimum acceptable effective PK – below this threshold the shot is not worth taking.
+# Prevents hopeless matchups (e.g. ANTI_AIR vs BALLISTIC, PK=0.30) from being assigned.
+MIN_PK_THRESHOLD = 0.45
+
+# High-value effectors (cost ≥ this threshold) are reserved for priority threats only.
+# Prevents Patriots (31.5 MSEK/shot) being wasted on loitering munitions and drones.
+EXPENSIVE_SHOT_USD       = 10_000_000  # SEK: Patriot=31.5M, PAC-3=42M; GBAD=5.25M is exempt
+EXPENSIVE_SHOT_MIN_PRI   = 7           # only P7+ justifies a Patriot/PAC-3 shot
+
+# Threat classes that high-value SAMs must NEVER engage regardless of priority.
+# Drones and loitering munitions are cheap, slow, low-altitude — always use SHORAD/drones/GBAD.
+EXPENSIVE_SHOT_EXCLUDED_CLASSES = {ThreatClass.DRONE, ThreatClass.LOITERING_MUNITION}
+
+
 def composite_score(effector: Effector, threat: Threat) -> float:
     """Returns a [0, 1] engagement desirability score."""
     if not effector.in_range(threat):
@@ -134,6 +148,17 @@ def composite_score(effector: Effector, threat: Threat) -> float:
         return 0.0
 
     pk      = effector.effective_pk(threat)   # includes salvo policy + weather
+    if pk < MIN_PK_THRESHOLD:
+        return 0.0   # block bad matchups – don't waste a shot
+
+    # Doctrine gate: hold high-cost effectors for high-priority threats.
+    # SHORAD/GBAD ($500K) are unaffected; Patriots/PAC-3 ($1M+) only engage P7+
+    # AND are never used against drones or loitering munitions regardless of priority.
+    if effector.cost_per_shot_usd >= EXPENSIVE_SHOT_USD:
+        if threat.threat_class in EXPENSIVE_SHOT_EXCLUDED_CLASSES:
+            return 0.0   # hard block: never use Patriots on drones/loitering munitions
+        if threat.priority < EXPENSIVE_SHOT_MIN_PRI:
+            return 0.0   # soft block: save for high-priority threats
     urg     = _urgency_score(threat)
     cost_e  = _cost_efficiency_score(effector, threat)
     ammo    = _ammo_conservation_score(effector)
@@ -178,12 +203,12 @@ def build_rationale(effector: Effector, threat: Threat, score: float) -> str:
     reasons.append(f"range {dist:.0f}/{effector.range_km:.0f}km")
     if effector.ammo != -1:
         reasons.append(f"ammo {effector.ammo}/{effector.max_ammo}")
-    # Cost
+    # Cost (SEK)
     total_cost = effector.cost_per_shot_usd * effector.salvo_size
     if total_cost >= 1_000_000:
-        reasons.append(f"${total_cost/1e6:.1f}M/engagement")
+        reasons.append(f"{total_cost/1e6:.1f} MSEK/engagement")
     elif total_cost > 0:
-        reasons.append(f"${total_cost:,.0f}/engagement")
+        reasons.append(f"{total_cost:,.0f} kr/engagement")
     return f"Score {score:.2f} | " + " | ".join(reasons)
 
 

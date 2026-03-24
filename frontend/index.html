@@ -363,7 +363,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-deep); color: 
     <div class="stat-box"><span class="stat-val" id="stat-effectors">0</span><span class="stat-lbl">Ready</span></div>
     <div class="stat-box"><span class="stat-val" id="stat-neutralized">0</span><span class="stat-lbl">Neutralized</span></div>
     <div class="stat-box"><span class="stat-val" id="stat-reserve" style="color:var(--ok)">—</span><span class="stat-lbl">Reserve</span></div>
-    <div class="stat-box" style="cursor:pointer" onclick="showCostModal()"><span class="stat-val" id="stat-cost" style="color:var(--warn)">$0</span><span class="stat-lbl">Mission Cost ↗</span></div>
+    <div class="stat-box" style="cursor:pointer" onclick="showCostModal()"><span class="stat-val" id="stat-cost" style="color:var(--warn)">0 kr</span><span class="stat-lbl">Mission Cost ↗</span></div>
     <div class="stat-box"><span class="stat-val" id="stat-tick">0</span><span class="stat-lbl">Tick</span></div>
 
     <div class="status-bar">
@@ -582,11 +582,12 @@ function updateStats(s) {
   document.getElementById('effector-badge').textContent  = s.effectors.filter(e=>e.status==='ready').length;
   document.getElementById('orders-badge').textContent    = (s.recent_orders||[]).length;
   // Mission cost
-  const cost = s.total_cost_usd || 0;
+  const cost = s.total_cost_usd || 0;  // field name kept; values now in SEK
   document.getElementById('stat-cost').textContent =
-    cost >= 1e6 ? `$${(cost/1e6).toFixed(1)}M` :
-    cost >= 1e3 ? `$${(cost/1e3).toFixed(0)}K` :
-    `$${cost.toFixed(0)}`;
+    cost >= 1e9 ? `${(cost/1e9).toFixed(2)} mdkr` :
+    cost >= 1e6 ? `${(cost/1e6).toFixed(1)} Mkr` :
+    cost >= 1e3 ? `${(cost/1e3).toFixed(0)} kkr` :
+    `${cost.toFixed(0)} kr`;
   // Escalation reserve = ready effectors not currently assigned to an engaged threat
   const engagedThreatCount = s.threats.filter(t => t.status === 'engaged').length;
   const reserveCount = Math.max(0, s.effectors.filter(e => e.status === 'ready').length - engagedThreatCount);
@@ -914,9 +915,10 @@ function selectEffector(id) {
 
 // ── Cost Breakdown Modal ───────────────────────────────────────────
 function fmtCost(c) {
-  if (c >= 1e6) return `$${(c/1e6).toFixed(2)}M`;
-  if (c >= 1e3) return `$${(c/1e3).toFixed(0)}K`;
-  return c > 0 ? `$${c.toFixed(0)}` : '—';
+  if (c >= 1e9) return `${(c/1e9).toFixed(2)} mdkr`;
+  if (c >= 1e6) return `${(c/1e6).toFixed(1)} Mkr`;
+  if (c >= 1e3) return `${(c/1e3).toFixed(0)} kkr`;
+  return c > 0 ? `${c.toFixed(0)} kr` : '—';
 }
 
 function showCostModal() {
@@ -972,7 +974,7 @@ function renderCostBreakdown(log) {
       <td style="color:var(--text-dim)">${o.threat_class}</td>
       <td style="font-family:var(--font-mono)">${pkPct}%</td>
       <td><span class="outcome-badge ${outcome}">${icon} ${outcome.toUpperCase()}</span></td>
-      <td style="text-align:right;font-family:var(--font-mono);color:${o.cost_usd > 1e6 ? 'var(--danger)' : o.cost_usd > 100000 ? 'var(--warn)' : 'var(--ok)'}">${costStr}</td>
+      <td style="text-align:right;font-family:var(--font-mono);color:${o.cost_usd > 10e6 ? 'var(--danger)' : o.cost_usd > 1e6 ? 'var(--warn)' : 'var(--ok)'}">${costStr}</td>
     </tr>`;
   }).join('');
 }
